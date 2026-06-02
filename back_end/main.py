@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware #CORSMiddleware：用來處�
 from fastapi.responses import StreamingResponse, JSONResponse #JSONResponse：用來返回 JSON 格式的響應，適合用於 API 的回應
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from contextlib import asynccontextmanager
-#from gtts import gTTS
+from gtts import gTTS
 from jose import JWTError, jwt
 from jwt.exceptions import InvalidTokenError
 from datetime import datetime, timedelta, timezone
@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Annotated, List, Optional
 from agents import Runner, SQLiteSession
 from agent import build_main_agent, format_context_for_prompt
-from context_agent import run_context_agent
+#from back_end.context_agent import run_context_agent
 from preference_analyzer import run_preference_analyzer
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -27,6 +27,7 @@ import asyncio
 import io
 import json
 import edge_tts
+import uuid
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -43,12 +44,18 @@ async def lifespan(app: FastAPI):
 
 async def idle_checker():
     while True:
-        await asyncio.sleep(60)  # 每分鐘檢查一次
+        await asyncio.sleep(60)
         now = datetime.now()
         for username, last in list(last_activity.items()):
             if now - last > IDLE_TIMEOUT:
-                print(f"⏰ {username} idle timeout，觸發 Summarizer")
-                asyncio.create_task(run_preference_analyzer(username))
+                print(f"⏰ {username} idle timeout，觸發 Preference Analyzer")
+                asyncio.create_task(
+                    run_preference_analyzer(
+                        user_id=username,
+                        session_id=user_contexts[username]["session_id"],
+                        session_cache=session_cache
+                    )
+                )
                 del last_activity[username]
 
 app = FastAPI(lifespan=lifespan) #FastAPI()：建立一個 FastAPI 應用程式實例
@@ -63,10 +70,11 @@ last_activity: dict[str, datetime] = {}
 
 
 load_dotenv()
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-#PICOVOICE_API_KEY = os.getenv("PICOVOICE_API_KEY")
-#listener = VoiceListener(PICOVOICE_API_KEY)
-listener = VoiceListener()  # 不再需要 API key，直接初始化
+PICOVOICE_API_KEY = os.getenv("PICOVOICE_API_KEY")
+print(PICOVOICE_API_KEY)
+listener = VoiceListener(PICOVOICE_API_KEY)
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -137,20 +145,15 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_shceme)]):
     return user
 
 def get_user_session(username: str):
-    key = username
-
-    if key not in session_cache:
-        '''
-        session_cache[key] = UserSession(
-            username,
-            keep_last_n_turns=3,
-            context_limit=6,
-            summarizer=LLMSummarizer(memory_manager)
-        )
-        '''
-        session_cache[key] = SQLiteSession(username)
-
-    return session_cache[key]
+    if username not in session_cache:
+        # 如果 user_contexts 沒有這個 username，自動產生一個 session_id
+        if username not in user_contexts:
+            user_contexts[username] = {"session_id": str(uuid.uuid4())}
+        
+        session_id = user_contexts[username]["session_id"]
+        session_cache[username] = SQLiteSession(session_id, db_path="sessions.db")
+    
+    return session_cache[username]
 
 async def append_session_log(user_id: str, question: str, reply: str, pool):
     async with pool.acquire() as conn:
@@ -223,6 +226,10 @@ def login(data: LoginRequest):
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(data={"sub":user["username"]}, expires_delta=access_token_expires)
 
+        #每次登入產生新的session_id
+        session_id = str(uuid.uuid4())
+        user_contexts[username] = {"session_id": str(uuid.uuid4())} #把session_id存到全域變數(要給/ask拿的)
+
         return Token(access_token=access_token, token_type="bearer")
     finally:
         cursor.close()
@@ -272,11 +279,13 @@ async def register(data: RegisterRequest):
 async def ask_agent(data: QuestionRequest, user: dict = Depends(get_current_user)):
     try:
         username = user["username"]
+
         now = datetime.now()
         last_activity[username] = now
 
-        session = get_user_session(username)
+        session = get_user_session(username) #取得該使用者當前的session
         
+        '''
         agent_output: ContextAgentOutput = await run_context_agent(
             user_id=username,
             session_id=username,
@@ -284,8 +293,9 @@ async def ask_agent(data: QuestionRequest, user: dict = Depends(get_current_user
         )
         context_str = format_context_for_prompt(agent_output.context)
         print(f"子Agent整理的上下文:\n{context_str}")
+        '''
 
-        main_agent = build_main_agent(username, context_str)
+        main_agent = build_main_agent(username) #, context_str
         result = await Runner.run(main_agent, data.question, session=session)
         reply = result.final_output
 
