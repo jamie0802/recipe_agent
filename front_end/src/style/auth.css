@@ -1,0 +1,174 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+.auth-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #EDE5D8;
+  padding: 2rem;
+
+  image-rendering: pixelated;
+  font-family: "Press Start 2P", cursive;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 520px;
+
+  background: #F5F1E9;
+
+  border: 6px solid #8C5A42;
+
+  border-radius: 0;
+
+  padding: 2.5rem;
+
+  box-shadow:
+    0 0 0 4px #7A4A30,
+    0 0 0 8px #8C5A42,
+    10px 10px 0 #4A2510;
+}
+
+.auth-title {
+  margin: 0 0 2rem 0;
+
+  font-size: 28px;
+
+  color: #7A4A30; 
+
+  background: transparent; 
+
+  border: none;
+
+  padding: 0;
+
+  text-align: center;
+
+  line-height: 1.8;
+
+  text-shadow:
+    2px 2px 0 #D9CAAE,
+    4px 4px 0 #8C5A42;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.auth-input {
+  padding: 20px;
+
+  background: #F5F1E9;
+
+  border: 4px solid #8C5A42;
+
+  border-radius: 0;
+
+  font-size: 18px;
+
+  color: #7A4A30;
+
+  font-family: "Press Start 2P", cursive;
+
+  box-shadow: inset 4px 4px 0 #D9CAAE;
+}
+
+.auth-input:focus {
+  outline: none;
+  background: #F5F1E9;
+  border-color: #7A4A30;
+}
+
+.auth-button {
+  margin-top: 10px;
+
+  padding: 22px;
+
+  background: #7A4A30;
+
+  color: white;
+
+  border: 4px solid #8C5A42;
+
+  border-radius: 0;
+
+  font-size: 18px;
+
+  font-family: "Press Start 2P", cursive;
+
+  cursor: pointer;
+
+  box-shadow: 0 6px 0 #4A2510;
+
+  transition: transform 0.08s, box-shadow 0.08s;
+}
+
+.auth-button:hover {
+  background: #7A4A30;
+}
+
+.auth-button:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 #4A2510;
+}
+
+.auth-error {
+  color: #7A4A30;
+
+  margin-top: 14px;
+
+  text-align: center;
+
+  font-size: 14px;
+
+  text-shadow: 1px 1px 0 #8C5A42;
+}
+
+.auth-footer {
+  margin-top: 22px;
+
+  text-align: center;
+
+  font-size: 14px;
+
+  color: #8C5A42;
+
+  line-height: 2;
+}
+
+.auth-footer a {
+  color: #7A4A30;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.auth-footer a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+  .auth-card {
+    padding: 1.5rem;
+  }
+
+  .auth-title {
+    font-size: 22px;
+  }
+
+  .auth-input {
+    font-size: 14px;
+  }
+
+  .auth-button {
+    font-size: 14px;
+  }
+
+  .auth-error,
+  .auth-footer {
+    font-size: 12px;
+  }
+}

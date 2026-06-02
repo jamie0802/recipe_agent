@@ -1,0 +1,342 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+.practice-box {
+  display: flex;
+  flex-direction: column;
+  height: 600px;
+
+  background: #F5F1E9;
+  border: 6px solid #8C5A42;
+
+  border-radius: 0;
+
+  overflow: hidden;
+
+  image-rendering: pixelated;
+
+  box-shadow:
+    0 0 0 4px #7A4A30,
+    0 0 0 8px #8C5A42,
+    10px 10px 0 #4A2510;
+
+  font-family: "Press Start 2P", cursive;
+}
+
+.recipe-area {
+  flex: 1;
+  overflow-y: auto;
+
+  padding: 24px;
+
+  background:
+    linear-gradient(
+      0deg,
+      #EDE5D8 0px,
+      #EDE5D8 8px,
+      #EDE5D8 8px,
+      #EDE5D8 16px
+    );
+
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+ 
+.recipe-area h3 {
+  margin: 0;
+
+  color: #F5F1E9;
+
+  background: #7A4A30;
+
+  border:
+    4px solid #8C5A42;
+
+  padding: 18px;
+
+  font-size: 24px;
+  line-height: 1.6;
+  letter-spacing: 2px;
+
+  text-shadow:
+    3px 3px 0 #4A2510;
+
+  box-shadow:
+    6px 6px 0 #8C5A42;
+}
+
+.recipe-area h4 {
+  margin: 10px 0;
+
+  color: #8C5A42;
+
+  font-size: 40px;
+  line-height: 1.6;
+
+  padding-left: 6px;
+
+  text-shadow:
+    2px 2px 0 #EDE5D8;
+}
+
+.recipe-info {
+  display: flex;
+  gap: 12px;
+
+  padding: 18px;
+
+  background: #F5F1E9;
+
+  border:
+    4px solid #8C5A42;
+
+  box-shadow:
+    6px 6px 0 #8C5A42;
+}
+
+.info-item {
+  flex: 1;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  gap: 10px;
+
+  padding: 14px;
+
+  background: #EDE5D8;
+
+  border:
+    4px solid #8C5A42;
+}
+
+.info-label {
+  color: #7A4A30;
+  font-size: 20px; 
+  line-height: 1.6;
+  text-align: center;
+}
+
+.info-value {
+  color: #7A4A30;
+
+  font-size: 16px;
+  line-height: 1.6;
+
+  text-shadow:
+    2px 2px 0 #8C5A42;
+}
+
+.ingredients,
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ingredients li,
+.steps li {
+  padding: 18px;
+
+  background: #F5F1E9;
+
+  color: #7A4A30;
+
+  border:
+    4px solid #8C5A42;
+
+  margin-bottom: 14px;
+
+  font-size: 14px;
+  line-height: 2;
+
+  box-shadow:
+    4px 4px 0 #8C5A42;
+
+  word-break: break-word;
+}
+
+.steps li {
+  cursor: pointer;
+
+  transition:
+    transform 0.08s,
+    background 0.08s;
+}
+
+.steps li:hover {
+  background: #EDE5D8;
+
+  transform: translate(2px, 2px);
+
+  box-shadow:
+    2px 2px 0 #8C5A42;
+}
+
+/* 目前步驟 */
+.active-step {
+  background: #7A4A30 !important;
+
+  color: #F5F1E9 !important;
+
+  border:
+    5px solid #8C5A42 !important;
+
+  font-size: 18px !important;
+  line-height: 2.2 !important;
+
+  padding: 24px !important;
+
+  box-shadow:
+    0 0 0 4px #EDE5D8,
+    8px 8px 0 #8C5A42 !important;
+
+  animation: pixelPulse 0.8s infinite alternate;
+}
+
+@keyframes pixelPulse {
+  from {
+    transform: scale(1);
+  }
+
+  to {
+    transform: scale(1.02);
+  }
+}
+
+.practice-search,
+.controls {
+  display: flex;
+  gap: 14px;
+
+  padding: 18px;
+
+  background: #EDE5D8;
+
+  border-top:
+    6px solid #8C5A42;
+}
+
+.practice-search input {
+  flex: 1;
+
+  padding: 18px;
+
+  background: #F5F1E9;
+
+  border:
+    4px solid #8C5A42;
+
+  border-radius: 0;
+
+  font-size: 14px;
+
+  color: #7A4A30;
+
+  font-family: "Press Start 2P", cursive;
+
+  box-shadow:
+    inset 4px 4px 0 #EDE5D8;
+}
+
+.practice-search input:focus {
+  outline: none;
+
+  background: #F5F1E9;
+
+  border-color: #7A4A30;
+}
+
+.practice-search button,
+.controls button {
+  min-width: 140px;
+  min-height: 72px;
+
+  padding: 16px 20px;
+
+  background: #7A4A30;
+
+  color: white;
+
+  border:
+    4px solid #8C5A42;
+
+  border-radius: 0;
+
+  font-size: 14px;
+  line-height: 1.6;
+
+  font-family: "Press Start 2P", cursive;
+
+  cursor: pointer;
+
+  box-shadow:
+    0 6px 0 #4A2510;
+
+  transition:
+    transform 0.08s,
+    box-shadow 0.08s;
+}
+
+.practice-search button:hover,
+.controls button:hover {
+  background: #7A4A30;
+}
+
+.practice-search button:active,
+.controls button:active {
+  transform: translateY(4px);
+
+  box-shadow:
+    0 2px 0 #4A2510;
+}
+
+.recipe-area::-webkit-scrollbar {
+  width: 16px;
+}
+
+.recipe-area::-webkit-scrollbar-track {
+  background: #EDE5D8;
+
+  border-left:
+    4px solid #8C5A42;
+}
+
+.recipe-area::-webkit-scrollbar-thumb {
+  background: #7A4A30;
+
+  border:
+    3px solid #8C5A42;
+}
+
+.recipe-area::-webkit-scrollbar-thumb:hover {
+  background: #7A4A30;
+}
+
+.practice-box {
+  height: auto;
+  min-height: 100vh;
+}
+
+.practice-search,
+.controls {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .recipe-info {
+    flex-direction: column;
+  }
+
+  .practice-search,
+  .controls {
+    flex-direction: column;
+  }
+
+  .practice-search button,
+  .controls button {
+    width: 100%;
+  }
+}
