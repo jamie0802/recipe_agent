@@ -19,6 +19,7 @@ async def get_pool():
             database=os.getenv("POSTGRES_DB_NAME"),
             user=os.getenv("POSTGRES_DB_USER"),
             password=os.getenv("POSTGRES_DB_PASSWORD"),
+            server_settings={"client_encoding": "utf8"} 
         )
 
     return _pool

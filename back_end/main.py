@@ -1,22 +1,18 @@
 from fastapi import FastAPI, APIRouter, Depends, HTTPException ,status, Header, UploadFile, File, BackgroundTasks, WebSocket
 from fastapi.middleware.cors import CORSMiddleware #CORSMiddleware：用來處理跨來源資源共享（CORS）問題，允許前端應用程式從不同的域名訪問後端 API
 from fastapi.responses import StreamingResponse, JSONResponse #JSONResponse：用來返回 JSON 格式的響應，適合用於 API 的回應
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer
 from contextlib import asynccontextmanager
-from gtts import gTTS
 from jose import JWTError, jwt
 from jwt.exceptions import InvalidTokenError
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
-from typing import Annotated, List, Optional
+from typing import Annotated
 from agents import Runner, SQLiteSession
-from agent import build_main_agent, format_context_for_prompt
-#from back_end.context_agent import run_context_agent
+from agent import build_main_agent
 from preference_analyzer import run_preference_analyzer
 from dotenv import load_dotenv
-from openai import OpenAI
 from faster_whisper_record import transcribe_audio, VoiceListener
-from models import ContextAgentOutput
 from database import get_pool
 from PPR import recommend_tool
 import mysql.connector
@@ -48,7 +44,7 @@ async def idle_checker():
         now = datetime.now()
         for username, last in list(last_activity.items()):
             if now - last > IDLE_TIMEOUT:
-                print(f"⏰ {username} idle timeout，觸發 Preference Analyzer")
+                print(f"{username} idle timeout，觸發 Preference Analyzer")
                 asyncio.create_task(
                     run_preference_analyzer(
                         user_id=username,
@@ -72,9 +68,9 @@ last_activity: dict[str, datetime] = {}
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-PICOVOICE_API_KEY = os.getenv("PICOVOICE_API_KEY")
-print(PICOVOICE_API_KEY)
-listener = VoiceListener(PICOVOICE_API_KEY)
+#PICOVOICE_API_KEY = os.getenv("PICOVOICE_API_KEY")
+#listener = VoiceListener(PICOVOICE_API_KEY)
+listener = VoiceListener()  # 不再需要 API key，直接初始化
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -312,20 +308,7 @@ async def voice_to_text(file: UploadFile = File(description="please enter a voic
     text = await transcribe_audio(file)
 
     return {"text": text}
-"""
-#文字轉語音
-@app.get("/fridge/speak")
-async def speak(text: str):
-    tts = gTTS(text=text, lang="zh-tw")#建立語音
 
-    mp3 = io.BytesIO()#建立記憶體檔案
-    
-    tts.write_to_fp(mp3) #把語音寫入記憶體
-    
-    mp3.seek(0) #指標移到檔案開頭(為了播放用)
-
-    return StreamingResponse(mp3, media_type="audio/mpeg")#回傳音訊串流->瀏覽器會撥放    
-"""
 @app.get("/fridge/speak")
 async def speak(text: str):
     mp3 = io.BytesIO() #不寫入硬碟，直接存在 RAM

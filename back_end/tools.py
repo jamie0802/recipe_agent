@@ -239,18 +239,8 @@ async def fetch_recent_activity(user_id: str) -> str:
 #拿來推薦食譜
 @function_tool
 async def recommend_recipe(param: Recommend) -> str:
-    """
-    推薦食譜。
-
-    Args:
-        user_id: 使用者 ID，從上下文填入
-        exclude: 必須排除的食材，包含過敏食材和當下不想要的食材，從上下文「過敏食物」欄位填入
-        prefer: 偏好食材列表，從上下文「近期偏好」填入
-        cuisine_type: 料理類型，使用者未指定傳 null
-        serving: 用餐人數，使用者未指定傳 null
-        max_duration: 最長製作時長（分鐘），使用者未指定傳 null
-    """
     print("RECOMMEND_TOOL CALLED")
+
     print("主Agent此次推薦參數")
     print(f"""
     使用者ID: {param.user_id}
@@ -261,33 +251,63 @@ async def recommend_recipe(param: Recommend) -> str:
     必須排除: {param.exclude}
     偏好食材列表: {param.prefer}
     """)
+
     try:
-        #轉成dict給tool用
+        # 轉成 dict 給 tool 使用
         param_dict = param.model_dump()
-        print("param_dict的型態:", type(param_dict))
+
+        print("param_dict 的型態:", type(param_dict))
+        print("param_dict:", param_dict)
 
         if not param_dict.get("cuisine_type"):
             print("沒有特定的食譜類型，直接隨機推薦")
-            results = await tool.random_get_recipe(param_dict,20)
-        else:
-            print("有特定的食譜類型，使用PPR推薦")
-            results = await tool.PPR(param_dict)
-        print("推薦結果:", results)
 
+            results = await tool.random_get_recipe(
+                param_dict,
+                20
+            )
+
+        else:
+            print("有特定的食譜類型，使用 PPR 推薦")
+
+            results = await tool.PPR(param_dict)
+
+        print("推薦結果:", results)
+        
         if results and param.cuisine_type:
             pool = await get_pool()
+
+            history_data = [
+                (
+                    param.user_id,
+                    recipe_name,
+                    [param.cuisine_type]
+                )
+                for recipe_name in results
+            ]
+
+            print("準備寫入 recommendation_history:")
+            print(history_data)
+
             await pool.executemany(
                 """
-                INSERT INTO recommendation_history (user_id, recipe_name, cuisine_type)
-                VALUES ($1, $2, $3)
+                INSERT INTO recommendation_history
+                    (user_id, recipe_name, cuisine_type)
+                VALUES
+                    ($1, $2, $3)
                 """,
-                [(param.user_id, recipe_name, param.cuisine_type) for recipe_name in results]
+                history_data
             )
+
+            print("recommendation_history 寫入成功")
+
         return results
 
     except Exception as e:
         import traceback
+
         print(f"RECOMMEND_TOOL ERROR: {traceback.format_exc()}")
+
         return f"推薦失敗：{str(e)}"
 
 

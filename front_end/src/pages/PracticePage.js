@@ -9,7 +9,7 @@ function PracticePage({ recipeData, currentStep, setCurrentStep, onSearch, isLoa
 
     // 每次播放時都會同步更新 globalAudioRef，確保 AgentPage 也能打斷
     const audioRef = useRef(null);//來存儲當前播放中的音訊物件
-
+    /*
     const stopVoice = () => {//停止音訊的函式(只有停止practice的)
         if (audioRef.current) {
             audioRef.current.pause();
@@ -18,6 +18,18 @@ function PracticePage({ recipeData, currentStep, setCurrentStep, onSearch, isLoa
         }
         // (為了不讓agentpage認為我還在撥放，所以要清空)如果 globalAudioRef 指向的就是 Practice 的音訊
         if (globalAudioRef && globalAudioRef.current === audioRef.current) {
+            globalAudioRef.current = null;
+        }
+    };*/
+
+    const stopVoice = () => {
+        const current = audioRef.current;
+        if (current) {
+            current.pause();
+            current.currentTime = 0;
+            audioRef.current = null;
+        }
+        if (globalAudioRef && globalAudioRef.current === current) {
             globalAudioRef.current = null;
         }
     };

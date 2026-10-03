@@ -1,163 +1,256 @@
 from faster_whisper import WhisperModel
 import io
-from pvrecorder import PvRecorder #Picovoice提供的麥克風錄音工具，專門配合 Porcupine 使用
-import pvporcupine #匯入 Porcupine 語音喚醒引擎，用來偵測喚醒詞（wake word）
-import tempfile #建立暫存檔案
+import sounddevice as sd
+from openwakeword.model import Model as OWWModel
+from openwakeword.utils import download_models
 import os
 import asyncio
 import time
 import numpy as np
-import webrtcvad #pip install webrtcvad-wheels(已編譯版本)
-import soundfile as sf #pip install soundfile(用來寫入 wav 檔案)
+import webrtcvad
 
 model = WhisperModel("small", device="cpu")
-#Whisper 的 transcribe() 需要的是:檔案路徑or檔案物件
+
 async def transcribe_audio(file):
     audio_bytes = await file.read()
-    audio_buffer = io.BytesIO(audio_bytes) #io.BytesIO:把 bytes資料轉成記憶體中的檔案物件(就是轉成可讀取檔案的意思)
-    segments, info = model.transcribe(audio_buffer, beam_size=5,initial_prompt="以下是繁體中文內容：" )#會回傳segement跟info(語音資訊:語言...)
-
-    full_text = " ".join([segment.text for segment in segments])#用空格合併
+    audio_buffer = io.BytesIO(audio_bytes)
+    segments, info = model.transcribe(audio_buffer, beam_size=5, initial_prompt="以下是繁體中文內容：")
+    full_text = " ".join([segment.text for segment in segments])
     return full_text
 
+
+def _get_oww_model_path(model_name: str) -> str:
+    import openwakeword
+    pkg_dir = os.path.dirname(openwakeword.__file__)
+    model_path = os.path.join(pkg_dir, "resources", "models", f"{model_name}.onnx")
+    if not os.path.exists(model_path):
+        download_models([model_name])
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"找不到 OWW 模型：{model_path}")
+    return model_path
+
+
 class VoiceListener:
-    def __init__(self, api_key, wake_word="picovoice", sensitivity=0.5):
-        self.model = WhisperModel("small", device="cpu")
-        self.vad = webrtcvad.Vad(3) #建立了一個WebRTC VAD，並設定了靈敏度(用來判斷每個frame是否有語音)
-        self.porcupine = pvporcupine.create(
-            access_key=api_key,
-            keywords=[wake_word],
-            sensitivities=[sensitivity]
-        )#建立了喚醒詞偵測器
-        #self.frame_length = self.porcupine.frame_length
-        self.recorder = PvRecorder(frame_length=self.porcupine.frame_length, device_index=-1)#建立錄音器
-        #frame_length 是 Porcupine 物件內建的屬性(每次處理音訊時，需要的「音訊樣本數（samples）)， -1 = 系統的預設麥克風
-        self.last_trigger = 0    #上一次喚醒詞觸發時間
-        self.cooldown = 2        #冷卻時間，單位秒
-        self.running = False  # 控制loop運作用
-        self.websockets = {"ai": [], "practice": []} # 分組儲存 WebSocket 連線
+    WAKE_WORD_KEY = "hey_mycroft_v0.1"
+    WAKE_WORD_MODEL = "hey_mycroft_v0.1"
+
+    def __init__(self):
+        self.model = WhisperModel("tiny", device="cpu")
+        self.vad = webrtcvad.Vad(2)
+
+        model_path = _get_oww_model_path(self.WAKE_WORD_MODEL)
+        self.oww_model = OWWModel(
+            wakeword_model_paths=[model_path],
+            inference_framework="onnx"
+        )
+
+        self.fs = 16000
+        self.frame_samples = 1280        # 80ms @ 16kHz
+        self.last_trigger = 0
+        self.cooldown = 5
+        self.running = False
+        self.websockets = {"ai": [], "practice": []}
+        self._loop = None
+        self._mic_queue = None          # 喚醒詞用
+        self._rec_queue = None          # 錄音用（獨立 queue）
+        self._mode = "wake"             # "wake" | "record" | "ignore"
+        self._stream = None
+
+        self._oww_buffer = np.zeros(self.frame_samples * 10, dtype=np.int16)
+        self._last_score_broadcast = 0
+        self._score_broadcast_interval = 0.5
+        print(self.oww_model.models.keys())
+
+    def _sd_callback(self, indata, frames, time_info, status):
+        if indata is None or self._loop is None:
+            return
+        pcm = indata[:, 0].copy()
+        
+        if self._mode == "wake" and self._mic_queue is not None:
+            self._loop.call_soon_threadsafe(self._mic_queue.put_nowait, pcm)
+        elif self._mode == "record" and self._rec_queue is not None:
+            self._loop.call_soon_threadsafe(self._rec_queue.put_nowait, pcm)
 
     def start(self):
-        self.recorder.start() #開始監聽
+        self._loop = asyncio.get_event_loop()
+        self._mic_queue = asyncio.Queue()
+        self._rec_queue = asyncio.Queue()
+        self._stream = sd.InputStream(
+            samplerate=self.fs,
+            channels=1,
+            dtype="int16",
+            blocksize=self.frame_samples,
+            callback=self._sd_callback,
+            device=None
+        )
+        self._stream.start()
         self.running = True
         print("Listening for wake word...")
 
     def close(self):
         self.running = False
         try:
-            self.recorder.stop()
-            self.recorder.delete()
-            self.porcupine.delete()
+            self._stream.stop()
+            self._stream.close()
         except:
             pass
 
-    #WebSocket 傳輸是非同步 I/O
     async def broadcast(self, text):
-        for tab, ws_list in self.websockets.items():#回傳的格式(tab,對應的websocket列表)
+        for tab, ws_list in self.websockets.items():
             for ws in ws_list[:]:
                 try:
-                    # 傳送文字與來源標籤，讓前端知道這是語音辨識來的
                     await ws.send_json({"source": "voice", "tab": tab, "text": text})
                 except Exception:
-                    ws_list.remove(ws)# 如果傳送失敗（例如前端已關閉視窗），就從列表中移除該連線
+                    ws_list.remove(ws)
 
-    # 新加的 因為要向前端傳送我正在錄音
     async def broadcast_status(self, status):
         for tab, ws_list in self.websockets.items():
             for ws in ws_list[:]:
                 try:
                     await ws.send_json({"type": "status", "status": status})
-                except Exception as e:
+                except Exception:
+                    ws_list.remove(ws)
+
+    async def broadcast_score(self, score: float):
+        now = time.time()
+        if now - self._last_score_broadcast < self._score_broadcast_interval:
+            return
+        self._last_score_broadcast = now
+        for tab, ws_list in self.websockets.items():
+            for ws in ws_list[:]:
+                try:
+                    await ws.send_json({"type": "wake_score", "score": round(float(score), 4)})
+                except Exception:
                     ws_list.remove(ws)
 
     async def start_loop(self):
         self.start()
         try:
             while self.running:
-                text = await self.listen_once()#把 listen_once 丟到另一條 thread 跑
+                text = await self.listen_once()
                 if text:
                     print(f"語音辨識成功: {text}")
-                    await self.broadcast(text) # 改用廣播機制
-                await asyncio.sleep(0.01)
+                    await self.broadcast(text)
+                await asyncio.sleep(0)   # 讓出控制權給其他 task
         finally:
             self.close()
 
-    async def listen_once(self, fs=16000): 
-        try:
-            pcm = await asyncio.to_thread(self.recorder.read)
-        except Exception as e:
-            print(f"Error reading from recorder: {e}")
+    async def listen_once(self):
+        if self._mode != "wake":
+            await asyncio.sleep(0.05)
             return None
-        
-        keyword_index = self.porcupine.process(pcm)#判斷是否偵測到喚醒詞
 
-        if keyword_index >= 0:
-            now = time.time()
-            #如果喚醒詞剛被觸發過，2 秒內再次偵測到也不會啟動錄音
-            if now - self.last_trigger < self.cooldown:
-                return None
-            self.last_trigger = now
+        try:
+            pcm_int16 = await self._mic_queue.get()
+        except Exception as e:
+            print(f"Error reading from mic: {e}")
+            return None
 
-            print("Wake word detected! Recording command...")
-            await self.broadcast_status("start_recording")
-            await asyncio.sleep(0.1) # 稍微讓出 event loop
+        self._oww_buffer = np.roll(self._oww_buffer, -self.frame_samples)
+        self._oww_buffer[-self.frame_samples:] = pcm_int16
 
-            print(">>> 進入錄音模式，請說話...", flush=True)
-            # 用 PvRecorder錄
-            audio = await asyncio.to_thread(self.record_until_silence, fs)
+        prediction = self.oww_model.predict(self._oww_buffer)
+        max_score = prediction.get(self.WAKE_WORD_KEY, 0.0)
+        detected = max_score > 0.7
+
+        await self.broadcast_score(max_score)
+
+        if not detected:
+            return None
+
+        # 核心修正：一旦偵測到，立刻調用 openwakeword 內建的 reset 清空模型 LSTM 狀態記憶
+        self.oww_model.reset()
+        self._oww_buffer = np.zeros(self.frame_samples * 10, dtype=np.int16)
+
+        now = time.time()
+        if now - self.last_trigger < self.cooldown:
+            print(f"⏳ 偵測到喚醒詞，但處於冷卻時間內，已忽略。score={max_score:.4f}")
+            while not self._mic_queue.empty():
+                try: self._mic_queue.get_nowait()
+                except: break
+            return None
             
-            await self.broadcast_status("stop_recording")
-            if audio is None:
-                return None
-                
-            audio = audio.astype(np.float32) / 32768.0 #將整數音訊標準化到 [-1, 1] 範圍
+        self.last_trigger = now
+        print(f"✅ 真正觸發喚醒詞！score={max_score:.4f}")
 
-            segments, _ = await asyncio.to_thread(self.model.transcribe, audio)
-            text = "".join([segment.text for segment in segments])
-            return text
-            
-        return None
-    
-    #用來錄音直到偵測到連續靜音或超過最大時間
-    def record_until_silence(self, fs,silence_duration=1.0, max_duration=20):
-        silence_counter = 0 #記錄連續靜音的秒數
-        start_time = time.time() #記錄錄音開始時間，用來判斷是否超過 max_duration
-        recording=[] #用來存每個 frame 的錄音
-        speech_started = False  # 一開始沒偵測到人聲
-        # 每個 frame 30ms，符合 WebRTC VAD 建議
-        frame_ms = 30
-        frame_samples = int(fs * frame_ms / 1000)
+        await self.broadcast_status("start_recording")
+
+        self._mode = "record"
+        while not self._rec_queue.empty():
+            try: self._rec_queue.get_nowait()
+            except: break
+
+        print(">>> 進入錄音模式，請說話...", flush=True)
+        audio = await self._record_until_silence_async()
+
+        # 進入 ignore 狀態，拒絕接收回調音訊
+        self._mode = "ignore"
+        await self.broadcast_status("stop_recording")
+
+        # 暫停一小段時間排空舊音訊
+        await asyncio.sleep(0.3)
+
+        # 清空 Queue 殘留
+        for q in (self._mic_queue, self._rec_queue):
+            while not q.empty():
+                try: q.get_nowait()
+                except: break
+                    
+        # 再次重設模型內部記憶與外部 buffer，做到雙重保險
+        self.oww_model.reset()
+        self._oww_buffer = np.zeros(self.frame_samples * 10, dtype=np.int16)
         
-        buffer = np.array([], dtype=np.int16)#buffer 用來暫存讀取的 PCM 音訊，方便切成固定長度的 frame 給VAD判斷是否有語音
+        self._mode = "wake"
+        print(">>> 系統回復，重新開始監聽喚醒詞...\n")
+
+        if audio is None:
+            return None
+
+        audio_float = audio.astype(np.float32) / 32768.0
+        segments, _ = await asyncio.to_thread(
+            self.model.transcribe, audio_float,
+            initial_prompt="以下是繁體中文內容："
+        )
+        return "".join([seg.text for seg in segments])
+
+    async def _record_until_silence_async(self, silence_duration=1.0, max_duration=20):
+        vad_frame_samples = int(self.fs * 0.03)  # 30ms = 480 samples
+        recording = []
+        speech_started = False
+        silence_counter = 0.0
+        start_time = asyncio.get_event_loop().time()
+        vad_buffer = np.array([], dtype=np.int16)
+
         while True:
-            pcm = self.recorder.read()
-            frame = np.array(pcm, dtype=np.int16)#將讀取到的PCM音訊轉成 numpy array，數據型態為 16-bit整數
+            try:
+                frame = await asyncio.wait_for(self._rec_queue.get(), timeout=0.5)
+            except asyncio.TimeoutError:
+                if asyncio.get_event_loop().time() - start_time > max_duration:
+                    print("達最大錄音時間")
+                    break
+                continue
+
             recording.append(frame)
-            buffer = np.concatenate([buffer, frame])
+            vad_buffer = np.concatenate([vad_buffer, frame])
 
-            # 將 frame 拆成 30ms 給 VAD
-            while len(buffer) >= frame_samples:
-                frame = buffer[:frame_samples]
-                buffer = buffer[frame_samples:]
-
-                is_speech = self.vad.is_speech(frame.tobytes(), fs)#self.vad → WebRTC VAD 實例
-                #frame.tobytes() → 將 numpy array 轉成 bytes 格式給 VAD
+            while len(vad_buffer) >= vad_frame_samples:
+                chunk = vad_buffer[:vad_frame_samples]
+                vad_buffer = vad_buffer[vad_frame_samples:]
+                is_speech = self.vad.is_speech(chunk.tobytes(), self.fs)
                 if is_speech:
                     speech_started = True
-                    silence_counter = 0
-                else:
-                    if speech_started:
-                        silence_counter += frame_ms / 1000  # 30ms
+                    silence_counter = 0.0
+                elif speech_started:
+                    silence_counter += 0.03
 
             if speech_started and silence_counter >= silence_duration:
-                print(f"偵測{silence_duration}靜音，停止錄音")
+                print(f"偵測 {silence_duration}s 靜音，停止錄音")
                 break
 
-            if time.time() - start_time > max_duration:
+            if asyncio.get_event_loop().time() - start_time > max_duration:
                 print("達最大錄音時間")
                 break
 
         if not recording:
             return None
-
         return np.concatenate(recording)

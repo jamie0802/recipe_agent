@@ -3,18 +3,14 @@ from typing import Optional, Literal
 from datetime import datetime
 from enum import Enum
 
-#列舉類別(拿來強制限制型別)
-#class conflict_tiem(str,Enum):
-
-
 # =======================
 # 任務一：給主Agent的上下文
 # =======================
 #這個是當回合使用者明確說的需求(子Agent抓)
 class ExplicitConstraints(BaseModel):
-    required: list[str] = Field(description="使用者明確說「要」「想要」的食材",default_factory=list)        # 使用者明確說「要」「想要」的食材或料理類型
-    excluded: list[str] = Field(description="使用者明確說「不要」「不能有」的食材",default_factory=list)        # 使用者明確說「不要」「不能有」的食材或料理類型
-    cuisine_type: list[str] = Field(description="只要是料理類型或標籤都放這個欄位",default_factory=list)            # 料理類型，如「日式」「義式」
+    required: list[str] = Field(description="使用者明確說「要」「想要」的食材",default_factory=list)        
+    excluded: list[str] = Field(description="使用者明確說「不要」「不能有」的食材",default_factory=list)     
+    cuisine_type: list[str] = Field(description="只要是料理類型或標籤都放這個欄位",default_factory=list)
     servings: Optional[int] = None          # 明確說的人數
     max_cook_time: Optional[int] = None     # 明確說的最長製作時長（分鐘）
 
@@ -55,7 +51,7 @@ class PreferenceSignal(BaseModel):
 
 # 子Agent最終輸出
 class ContextAgentOutput(BaseModel):
-    context: Context                                                    # 任務一
+    context: Context # 任務一
     preference_signals: list[PreferenceSignal] = Field(default_factory=list)  # 任務二
 
 # ===================
